@@ -1,0 +1,1144 @@
+
+-- EXPLORING DATA TYPES
+
+
+-- Checking data types in CovidDeaths table
+SELECT
+    COLUMN_NAME,
+    DATA_TYPE
+FROM
+    CovidPortfolioProject.INFORMATION_SCHEMA.COLUMNS
+WHERE
+    TABLE_NAME = 'CovidDeaths';
+
+
+-- Checking data types in CovidDeaths table
+SELECT
+    COLUMN_NAME,
+    DATA_TYPE
+FROM
+    CovidPortfolioProject.INFORMATION_SCHEMA.COLUMNS
+WHERE
+    TABLE_NAME = 'CovidVaccinations';
+
+
+
+-- Exploring the CovidDeaths table 
+
+-- Number of countries present in the location column
+SELECT 
+	COUNT(DISTINCT location) -- 243 countries
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NOT NULL;
+
+
+-- List of countries present in the location column
+SELECT 
+	DISTINCT location
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NOT NULL
+ORDER BY 
+	location;
+
+
+--	Exploring the continent and location columns in CovidDeaths
+SELECT 
+	DISTINCT(location)
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NULL
+	AND location LIKE '%income%' -- There rows with no continent assigned,have the continent (or other information such as low income, high income, etc.) in the location column
+ORDER BY 
+	location;
+
+
+
+-- EXPLORING THE DATA
+
+-- Looking at TOTAL CASES vs TOTAL DEATHS
+-- likelihood of dying if you get infected with Covid (by COUNTRY)
+SELECT 
+	location, 
+	date, 
+	total_cases, 
+	total_deaths, 
+	CAST(total_deaths AS float)*100 / NULLIF(CAST(total_cases AS float), 0) AS infected_death_rate
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NOT NULL
+	AND location = 'Switzerland'
+ORDER BY 
+	location,
+	date;
+
+
+-- The average infected death rate by country (VISUAL GROUP 1)
+SELECT 
+	continent, 
+	location, 
+	AVG(infected_death_rate) AS avg_infected_death_rate
+FROM 
+	(
+		SELECT
+			continent,
+			location, 
+			date, 
+			total_cases, 
+			total_deaths, 
+			CAST(total_deaths AS float)*100 / NULLIF(CAST(total_cases AS float), 0) AS infected_death_rate
+		FROM 
+			CovidPortfolioProject..CovidDeaths
+		WHERE 
+			continent IS NOT NULL
+	) AS subquery
+GROUP BY 
+	continent, location
+ORDER BY 
+	avg_infected_death_rate DESC;
+
+
+-- median infected death rate by country (VISUAL GROUP 1)
+SELECT
+	continent,
+	location,
+	median_infected_death_rate
+FROM
+	(
+		SELECT
+			continent, 
+			location,
+			PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY infected_death_rate) OVER (PARTITION BY location) AS median_infected_death_rate,
+			ROW_NUMBER() OVER (PARTITION BY location ORDER BY infected_death_rate DESC) AS rn
+		FROM
+			(
+				SELECT
+					continent,
+					location,
+					date,
+					total_cases,
+					total_deaths,
+					CAST(total_deaths AS float)*100 / NULLIF(CAST(total_cases AS float), 0) AS infected_death_rate
+				FROM
+					CovidPortfolioProject..CovidDeaths
+				WHERE
+					continent IS NOT NULL
+			) AS subquery
+	) AS result
+WHERE
+	rn = 1
+ORDER BY
+	median_infected_death_rate DESC;
+
+
+-- Creating CTE to find out on which date the infected death rate was at its highest (in Switzerland)
+WITH max_infected_death_rate
+	(location,
+	date,
+	infected_death_rate)
+AS (SELECT
+		location, 
+		date,
+		CAST(total_deaths AS float)*100 / NULLIF(CAST(total_cases AS float), 0) AS infected_death_rate
+	FROM 
+		CovidPortfolioProject..CovidDeaths
+	WHERE 
+		continent IS NOT NULL
+		AND location = 'Switzerland')
+SELECT TOP 1  -- 2020-05-27
+	location,
+	date,
+	infected_death_rate
+FROM max_infected_death_rate
+ORDER BY infected_death_rate DESC;
+
+
+-- Looking at TOTAL CASES vs TOTAL DEATHS
+-- likelihood of dying if you get infected by Covid by CONTINENT (Europe)
+SELECT 
+	location as Continent, 
+	date, 
+	total_cases, 
+	total_deaths, 
+	ROUND(CAST(total_deaths AS float)*100 / NULLIF(CAST(total_cases AS float), 0), 3) AS infected_death_rate
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NULL
+	--AND location <> 'High income'
+	--AND location <> 'Upper middle income'
+	--AND location <> 'Lower middle income'
+	--AND location <> 'Low income'
+	--AND location <> 'World'
+	AND location = 'Europe'
+ORDER BY 
+	1,2;
+
+
+-- Looking at Total Cases vs Population
+-- Shows what percentage of population got Covid
+SELECT 
+	location, 
+	date, 
+	population,
+	total_cases,  
+	(CAST(total_cases AS float) / population)*100 AS percent_population_infected
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NOT NULL
+	AND location = 'Switzerland'
+ORDER BY 
+	1,2;
+
+
+-- Looking at Total Cases vs Population
+-- Shows what percentage of population got Covid by CONTINENT
+SELECT 
+	location AS Continent, 
+	date, 
+	population,
+	total_cases,  
+	(CAST(total_cases AS float) / population)*100 AS percent_population_infected
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NULL
+	AND location <> 'High income'
+	AND location <> 'Upper middle income'
+	AND location <> 'Lower middle income'
+	AND location <> 'Low income'
+	AND location <> 'World'
+	AND location <> 'European Union'
+ORDER BY 
+	1,2;
+
+
+-- Exploring the infected death rate, % of population infected, and % of population death for the 4 different income classes
+SELECT 
+	location as income_level, 
+	date,
+	population, 
+	total_cases,
+	total_deaths,
+	ROUND(CAST(total_deaths AS float)*100 / NULLIF(CAST(total_cases AS float), 0), 3) AS infected_death_rate,
+	ROUND((CAST(total_cases AS float) / population)*100, 3) AS percent_population_infected,
+	ROUND((CAST(total_deaths AS float) / population)*100, 3) AS percent_population_death_rate
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NULL
+	AND location LIKE '%income%'
+ORDER BY 
+	location,
+	date;
+
+
+-- Calculating the average death rate, % of population infected, and % of population death for the 4 different income classes
+SELECT 
+	CASE 
+		WHEN location LIKE '%low income%' THEN 'Low Income'
+		WHEN location LIKE '%lower middle%' THEN 'Lower Middle Income'
+		WHEN location LIKE '%upper middle%' THEN 'Upper Middle Income'
+		WHEN location LIKE '%high income%' THEN 'High Income'
+		ELSE 'Other'
+	END AS income_class,
+	AVG(CAST(total_deaths AS float)*100 / NULLIF(CAST(total_cases AS float), 0)) AS avg_infected_death_rate,
+	AVG((CAST(total_cases AS float) / population)*100) AS avg_percent_population_infected,
+	AVG((CAST(total_deaths AS float) / population)*100) AS avg_percent_population_death_rate
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NULL
+	AND location LIKE '%income%'
+GROUP BY 
+	CASE 
+		WHEN location LIKE '%low income%' THEN 'Low Income'
+		WHEN location LIKE '%lower middle%' THEN 'Lower Middle Income'
+		WHEN location LIKE '%upper middle%' THEN 'Upper Middle Income'
+		WHEN location LIKE '%high income%' THEN 'High Income'
+		ELSE 'Other'
+	END
+ORDER BY 
+	income_class;
+
+
+-- Looking at COUNTRIES with highest infection rate vs population (VISUAL GROUP 1)
+SELECT
+	continent,
+	location,
+	population,
+	MAX(CAST(total_cases AS float)) AS highest_infection_count,  
+	(MAX(CAST(total_cases AS float)) / NULLIF(population, 0))*100 AS percent_population_infected
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NOT NULL
+GROUP BY
+	continent, location, population
+ORDER BY 
+	percent_population_infected DESC;
+
+
+-- looking at COUNTRIES with highest fatality rate vs population (VISUAL GROUP 1)
+SELECT 
+	continent,
+	location,
+	population,
+	MAX(CAST(total_deaths AS float)) AS highest_death_count,  
+	(MAX(CAST(total_deaths AS float)) / NULLIF(population, 0))*100 AS population_death_rate
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NOT NULL
+GROUP BY
+	continent,
+	location, 
+	population
+ORDER BY 
+	population_death_rate DESC;
+
+
+-- Looking at CONTINENTS with highest infection rate vs population
+SELECT 
+	location AS Continent,
+	population,
+	MAX(CAST(total_cases AS float)) AS highest_infection_count,  
+	(MAX(CAST(total_cases AS float)) / NULLIF(population, 0))*100 AS percent_population_infected
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NULL
+	AND location <> 'High income'
+	AND location <> 'Upper middle income'
+	AND location <> 'Lower middle income'
+	AND location <> 'Low income'
+	AND location <> 'World'
+	AND location <> 'European Union'
+GROUP BY
+	location, population
+ORDER BY 
+	percent_population_infected DESC;
+
+
+-- Showing countries with highest death count (VISUAL GROUP 1)
+SELECT
+	continent,
+	location,
+	MAX(CAST(total_deaths AS int)) AS total_death_count
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NOT NULL
+	--- AND location LIKE '%income%'
+GROUP BY
+	continent,
+	location
+ORDER BY 
+	total_death_count DESC;
+
+
+-- Showing CONTINENTS with highest death count per population V1
+SELECT 
+	location as Continent,
+	MAX(CAST(total_deaths AS int)) AS total_death_count
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NULL
+	AND location <> 'High income'
+	AND location <> 'Upper middle income'
+	AND location <> 'Lower middle income'
+	AND location <> 'Low income'
+	AND location <> 'World'
+	AND location <> 'European Union'
+GROUP BY
+	location
+ORDER BY 
+	total_death_count DESC;
+
+
+-- Showing CONTINENTS with highest death count per population V2
+SELECT 
+	continent,
+	MAX(CAST(total_deaths AS int)) AS total_death_count
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NOT NULL
+GROUP BY
+	continent
+ORDER BY 
+	total_death_count DESC;
+
+
+-- Global Numbers per day
+SELECT  
+	date, 
+	SUM(new_cases) AS TotalCases, 
+	SUM(new_deaths) AS TotalDeaths, 
+	SUM(new_deaths)/NULLIF(SUM(new_cases), 0)*100 AS infected_death_rate
+FROM 
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NOT NULL
+GROUP BY 
+	date
+ORDER BY 
+	date;
+
+
+-- JOIN - Looking at Total Population vs new Vaccinations
+SELECT 
+	deaths.continent, 
+	deaths.location, 
+	deaths.date, 
+	deaths.population, 
+	vaccinations.new_vaccinations
+FROM
+	CovidPortfolioProject..CovidDeaths as deaths
+		JOIN CovidPortfolioProject..CovidVaccinations as vaccinations
+		ON deaths.location = vaccinations.location
+		AND deaths.date = vaccinations.date
+WHERE 
+	deaths.continent IS NOT NULL
+	AND deaths.location = 'Switzerland'
+ORDER BY 1,2,3;
+
+
+-- Looking at Total Population vs Vaccinations per day and rolling count
+SELECT 
+	deaths.continent, 
+	deaths.location, 
+	deaths.date, 
+	deaths.population, 
+	vaccinations.new_vaccinations,
+	SUM(CAST(vaccinations.new_vaccinations AS bigint)) OVER
+		(PARTITION BY deaths.location
+		ORDER BY deaths.location, deaths.date) 
+		AS cummulative_nbr_vaccinations
+FROM
+	CovidPortfolioProject..CovidDeaths as deaths
+		JOIN CovidPortfolioProject..CovidVaccinations as vaccinations
+		ON deaths.location = vaccinations.location
+		AND deaths.date = vaccinations.date
+WHERE 
+	deaths.continent IS NOT NULL
+ORDER BY 
+	1,2,3;
+
+
+-- Using CTE in order to divide the MAX number of vaccinated people by the population (ratio of the population vaccinated)
+WITH PopulationVsVaccinations AS (
+    SELECT
+        deaths.continent,
+        deaths.location,
+        deaths.date,
+        deaths.population,
+        vaccinations.new_vaccinations,
+        SUM(CAST(vaccinations.new_vaccinations AS float)) OVER
+            (PARTITION BY deaths.location
+            ORDER BY deaths.date) AS cumulative_nbr_vaccinations
+    FROM
+        CovidPortfolioProject..CovidDeaths AS deaths
+        JOIN CovidPortfolioProject..CovidVaccinations AS vaccinations
+        ON deaths.location = vaccinations.location
+        AND deaths.date = vaccinations.date
+    WHERE
+        deaths.continent IS NOT NULL
+		AND deaths.location = 'Switzerland'
+)
+SELECT
+    PopulationVsVaccinations.*,
+    (cumulative_nbr_vaccinations / population) * 100 AS percent_population_vaccinated
+FROM
+    PopulationVsVaccinations;
+
+
+-- TEMP TABLE % of population vaccinated
+DROP TABLE IF EXISTS #PercentPopulationVaccinated
+CREATE TABLE #PercentPopulationVaccinated
+	(
+	continent nvarchar(255),
+	location nvarchar(255),
+	date datetime,
+	population numeric,
+	new_vaccinations numeric,
+	cummulative_nbr_vaccinations numeric
+	)
+
+INSERT INTO #PercentPopulationVaccinated
+	SELECT 
+		deaths.continent, 
+		deaths.location, 
+		deaths.date, 
+		deaths.population, 
+		vaccinations.new_vaccinations,
+		SUM(CAST(vaccinations.new_vaccinations AS float)) OVER
+			(PARTITION BY deaths.location
+			ORDER BY deaths.location, deaths.date) 
+			AS cummulative_nbr_vaccinations
+	FROM
+		CovidPortfolioProject..CovidDeaths as deaths
+			JOIN CovidPortfolioProject..CovidVaccinations as vaccinations
+			ON deaths.location = vaccinations.location
+			AND deaths.date = vaccinations.date
+	 WHERE 
+		deaths.continent IS NOT NULL;
+
+
+	SELECT *, 
+		(cummulative_nbr_vaccinations/population)*100 AS percent_population_vaccinated
+	FROM 
+		#PercentPopulationVaccinated;
+
+
+-- Creating VIEW to store data for later visualization
+CREATE VIEW CummulativeNbrVaccinated
+	AS 
+		SELECT 
+			deaths.continent, 
+			deaths.location, 
+			deaths.date, 
+			deaths.population, 
+			vaccinations.new_vaccinations,
+			SUM(CAST(vaccinations.new_vaccinations AS float)) OVER
+				(PARTITION BY deaths.location
+				ORDER BY deaths.location, deaths.date) 
+				AS cummulative_nbr_vaccinations
+		FROM
+			CovidPortfolioProject..CovidDeaths as deaths
+				JOIN CovidPortfolioProject..CovidVaccinations as vaccinations
+				ON deaths.location = vaccinations.location
+				AND deaths.date = vaccinations.date
+		WHERE deaths.continent IS NOT NULL;
+
+SELECT *
+FROM CummulativeNbrVaccinated;
+
+
+-- Global Total Cases, Total Deaths, Death Percentage
+SELECT 
+	SUM(new_cases) as total_cases,
+	SUM(new_deaths) as total_deaths,
+	(SUM(new_deaths) / SUM(new_cases)) * 100 as death_percentage
+FROM
+	CovidPortfolioProject..CovidDeaths
+ORDER BY
+	total_cases, total_deaths;
+
+
+-- Total Death Count by Continent
+SELECT
+	location, 
+	SUM(new_deaths) as total_death_count
+FROM
+	CovidPortfolioProject..CovidDeaths
+WHERE
+	continent IS NULL
+	AND location NOT IN (
+		'World', 
+		'European Union', 
+		'International', 
+		'High income', 
+		'Upper middle income',
+		'Lower middle income',
+		'Low income')
+GROUP BY
+	location
+ORDER BY
+	total_death_count desc;
+
+
+-- Highest Infection Count by Country
+SELECT
+	location,
+	population,
+	MAX(CAST(total_cases as float)) AS highest_infection_count,
+	MAX(CAST(total_cases as float)/population) * 100 AS percent_population_infected
+FROM 
+	CovidPortfolioProject..CovidDeaths
+GROUP BY
+	location,
+	population
+ORDER BY
+	percent_population_infected DESC;
+
+
+-- Highest Infection Count and Percent Population Infected by Country
+SELECT
+	location,
+	population,
+	date,
+	MAX(CAST(total_cases AS float)) AS highest_infection_count,
+	MAX(CAST(total_cases AS float)/population) *100 AS percent_population_infected
+FROM
+	CovidPortfolioProject..CovidDeaths
+GROUP BY
+	location,
+	population,
+	date
+ORDER BY
+	percent_population_infected DESC;
+
+
+-- Max Death Count by country
+SELECT
+	location,
+	population,
+	date,
+	MAX(CAST(total_deaths AS float)) AS highest_death_count
+FROM
+	CovidPortfolioProject..CovidDeaths
+WHERE
+	continent IS NOT NULL
+GROUP BY
+	location,
+	population,
+	date
+ORDER BY
+	highest_death_count DESC;
+
+
+-- INCOME CLASSES: infected death rate, % of population infected, and fatality rate vs population
+SELECT
+	location as income_level,
+	date,
+	population, 
+	new_cases,
+	total_cases,
+	new_deaths,
+	total_deaths,
+	ROUND(CAST(total_deaths AS float)*100 / NULLIF(CAST(total_cases AS float), 0), 3) AS infected_death_rate,
+	ROUND((CAST(total_cases AS float) / population)*100, 3) AS percent_population_infected,
+	ROUND((CAST(total_deaths AS float) / population)*100, 3) AS percent_population_death_rate
+FROM
+	CovidPortfolioProject..CovidDeaths
+WHERE 
+	continent IS NULL
+	AND location LIKE '%income%'
+ORDER BY 
+	location,
+	date DESC;
+
+
+-- INCOME CLASSES: AVG infected death rate, AVG % of population infected, and AVG fatality rate vs population
+SELECT 
+    CASE 
+        WHEN location LIKE '%low income%' THEN 'Low Income'
+        WHEN location LIKE '%lower middle%' THEN 'Lower Middle Income'
+        WHEN location LIKE '%upper middle%' THEN 'Upper Middle Income'
+        WHEN location LIKE '%high income%' THEN 'High Income'
+        ELSE 'Other'
+    END AS income_class,
+    AVG(CAST(total_deaths AS float)*100 / NULLIF(CAST(total_cases AS float), 0)) AS avg_infected_death_rate,
+    AVG((CAST(total_cases AS float) / population)*100) AS avg_percent_population_infected,
+    AVG((CAST(total_deaths AS float) / population)*100) AS avg_percent_population_death_rate
+FROM 
+    CovidPortfolioProject..CovidDeaths
+WHERE 
+    continent IS NULL
+    AND location LIKE '%income%'
+GROUP BY 
+    CASE 
+        WHEN location LIKE '%low income%' THEN 'Low Income'
+        WHEN location LIKE '%lower middle%' THEN 'Lower Middle Income'
+        WHEN location LIKE '%upper middle%' THEN 'Upper Middle Income'
+        WHEN location LIKE '%high income%' THEN 'High Income'
+        ELSE 'Other'
+    END
+ORDER BY 
+    income_class;
+ 
+
+ -- INCOME CLASSES: median infected death rate
+SELECT
+	location,
+	median_infected_death_rate
+FROM
+	(
+		SELECT
+			location,
+			PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY infected_death_rate) OVER (PARTITION BY location) AS median_infected_death_rate,
+			ROW_NUMBER() OVER (PARTITION BY location ORDER BY infected_death_rate DESC) AS rn
+		FROM
+			(
+				SELECT
+					location,
+					date,
+					total_cases,
+					total_deaths,
+					CAST(total_deaths AS float)*100 / NULLIF(CAST(total_cases AS float), 0) AS infected_death_rate
+				FROM
+					CovidPortfolioProject..CovidDeaths
+				WHERE
+					continent IS NULL
+					AND location LIKE '%income%'
+			) AS subquery
+	) AS result
+WHERE
+	rn = 1
+ORDER BY
+	median_infected_death_rate DESC;
+
+
+ -- INCOME CLASSES: median % of population infected,
+SELECT
+	location,
+	median_percent_population_infected
+FROM
+	(
+		SELECT
+			location,
+			PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY percent_population_infected) OVER (PARTITION BY location) AS median_percent_population_infected,
+			ROW_NUMBER() OVER (PARTITION BY location ORDER BY percent_population_infected DESC) AS rn
+		FROM
+			(
+				SELECT
+					location,
+					date,
+					total_cases,
+					total_deaths,
+					CAST(total_cases AS float)*100 / NULLIF(population, 0) AS percent_population_infected
+				FROM
+					CovidPortfolioProject..CovidDeaths
+				WHERE
+					continent IS NULL
+					AND location LIKE '%income%'
+			) AS subquery
+	) AS result
+WHERE
+	rn = 1
+ORDER BY
+	median_percent_population_infected DESC;
+
+
+ -- INCOME CLASSES: median fatality rate vs population
+ SELECT
+	location,
+	median_fatality_rate_vs_population
+FROM
+	(
+		SELECT
+			location,
+			PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY fatality_rate_vs_population) OVER (PARTITION BY location) AS median_fatality_rate_vs_population,
+			ROW_NUMBER() OVER (PARTITION BY location ORDER BY fatality_rate_vs_population DESC) AS rn
+		FROM
+			(
+				SELECT
+					location,
+					date,
+					total_cases,
+					total_deaths,
+					CAST(total_deaths AS float)*100 / NULLIF(population, 0) AS fatality_rate_vs_population
+				FROM
+					CovidPortfolioProject..CovidDeaths
+				WHERE
+					continent IS NULL
+					AND location LIKE '%income%'
+			) AS subquery
+	) AS result
+WHERE
+	rn = 1
+ORDER BY
+	median_fatality_rate_vs_population DESC;
+
+
+-- Combining median_infected_death_rate, median_percent_population_infected, and median_fatality_rate_vs_population into 1 table
+SELECT
+    location,
+    median_infected_death_rate,
+    median_percent_population_infected,
+    median_fatality_rate_vs_population
+FROM
+    (
+        -- INCOME CLASSES: median infected death rate
+        SELECT
+            location,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY infected_death_rate) OVER (PARTITION BY location) AS median_infected_death_rate,
+            ROW_NUMBER() OVER (PARTITION BY location ORDER BY infected_death_rate DESC) AS rn
+        FROM
+            (
+                SELECT
+                    location,
+                    date,
+                    total_cases,
+                    total_deaths,
+                    CAST(total_deaths AS float)*100 / NULLIF(CAST(total_cases AS float), 0) AS infected_death_rate
+                FROM
+                    CovidPortfolioProject..CovidDeaths
+                WHERE
+                    continent IS NULL
+                    AND location LIKE '%income%'
+            ) AS subquery1
+    ) AS result1
+    -- INCOME CLASSES: median % of population infected
+    JOIN (
+        SELECT
+            location AS loc_percent_infected,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY percent_population_infected) OVER (PARTITION BY location) AS median_percent_population_infected,
+            ROW_NUMBER() OVER (PARTITION BY location ORDER BY percent_population_infected DESC) AS rn
+        FROM
+            (
+                SELECT
+                    location,
+                    date,
+                    total_cases,
+                    total_deaths,
+                    CAST(total_cases AS float)*100 / NULLIF(population, 0) AS percent_population_infected
+                FROM
+                    CovidPortfolioProject..CovidDeaths
+                WHERE
+                    continent IS NULL
+                    AND location LIKE '%income%'
+            ) AS subquery2
+    ) AS result2 ON result1.location = result2.loc_percent_infected
+    -- INCOME CLASSES: median fatality rate vs population
+    JOIN (
+        SELECT
+            location AS loc_fatality_rate,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY fatality_rate_vs_population) OVER (PARTITION BY location) AS median_fatality_rate_vs_population,
+            ROW_NUMBER() OVER (PARTITION BY location ORDER BY fatality_rate_vs_population DESC) AS rn
+        FROM
+            (
+                SELECT
+                    location,
+                    date,
+                    total_cases,
+                    total_deaths,
+                    CAST(total_deaths AS float)*100 / NULLIF(population, 0) AS fatality_rate_vs_population
+                FROM
+                    CovidPortfolioProject..CovidDeaths
+                WHERE
+                    continent IS NULL
+                    AND location LIKE '%income%'
+            ) AS subquery3
+    ) AS result3 ON result1.location = result3.loc_fatality_rate
+WHERE
+    result1.rn = 1
+    AND result2.rn = 1
+    AND result3.rn = 1
+ORDER BY
+    location;
+
+
+--- Exploring outliers to determine the accuracy of Mean vs Median 
+--- The z-score is a statistical measure that indicates how many standard deviations a data point is from the mean. It is used to identify data points that are significantly different from the rest of the data.
+
+--- Zscore total_deaths
+SELECT
+    location,
+    date,
+    total_deaths,
+    (CAST(total_deaths AS float) - AVG(CAST(total_deaths AS float)) OVER (PARTITION BY location)) / STDEV(CAST(total_deaths AS float)) OVER (PARTITION BY location) AS zscore
+FROM
+    CovidPortfolioProject..CovidDeaths
+WHERE
+    continent IS NULL
+    AND location LIKE '%income%'
+ORDER BY
+    location, date DESC;
+
+--- Extreme outliers
+SELECT 
+	location, 
+	total_deaths, 
+	zscore
+FROM (
+    SELECT
+        location,
+        total_deaths,
+        (CAST(total_deaths AS float) - AVG(CAST(total_deaths AS float)) OVER (PARTITION BY location)) / STDEV(CAST(total_deaths AS float)) OVER (PARTITION BY location) AS zscore
+    FROM
+        CovidPortfolioProject..CovidDeaths
+    WHERE
+        continent IS NULL
+        AND location LIKE '%income%'
+) AS subquery
+WHERE 
+	ABS(zscore) > 2.576 -- NONE
+ORDER BY 
+	location DESC;
+
+--- Outliers 2 STD and above/below mean
+SELECT 
+	location, 
+	total_deaths, 
+	zscore
+FROM (
+    SELECT
+        location,
+        total_deaths,
+        (CAST(total_deaths AS float) - AVG(CAST(total_deaths AS float)) OVER (PARTITION BY location)) / STDEV(CAST(total_deaths AS float)) OVER (PARTITION BY location) AS zscore
+    FROM
+        CovidPortfolioProject..CovidDeaths
+    WHERE
+        continent IS NULL
+        AND location LIKE '%income%'
+) AS subquery
+WHERE 
+	ABS(zscore) > 1.96 -- NONE
+ORDER BY 
+	location DESC;
+	
+--- Outliers 1 STD and above/below mean
+SELECT 
+	location, 
+	total_deaths, 
+	zscore
+FROM (
+    SELECT
+        location,
+        total_deaths,
+        (CAST(total_deaths AS float) - AVG(CAST(total_deaths AS float)) OVER (PARTITION BY location)) / STDEV(CAST(total_deaths AS float)) OVER (PARTITION BY location) AS zscore
+    FROM
+        CovidPortfolioProject..CovidDeaths
+    WHERE
+        continent IS NULL
+        AND location LIKE '%income%'
+) AS subquery
+WHERE 
+	ABS(zscore) > 1.65 -- 53 Outliers by 1 STD for Low Income & 89 Outliers by 1 STD for High Income
+ORDER BY 
+	location DESC;
+
+
+
+--- Zscore total_cases
+SELECT
+    location,
+    date,
+    total_cases,
+    (CAST(total_cases AS float) - AVG(CAST(total_cases AS float)) OVER (PARTITION BY location)) / STDEV(CAST(total_cases AS float)) OVER (PARTITION BY location) AS zscore
+FROM
+    CovidPortfolioProject..CovidDeaths
+WHERE
+    continent IS NULL
+    AND location LIKE '%income%'
+ORDER BY
+    location, date DESC;
+
+--- Extreme outliers
+SELECT 
+	location, 
+	total_cases, 
+	zscore
+FROM (
+    SELECT
+        location,
+        total_cases,
+        (CAST(total_cases AS float) - AVG(CAST(total_cases AS float)) OVER (PARTITION BY location)) / STDEV(CAST(total_cases AS float)) OVER (PARTITION BY location) AS zscore
+    FROM
+        CovidPortfolioProject..CovidDeaths
+    WHERE
+        continent IS NULL
+        AND location LIKE '%income%'
+) AS subquery
+WHERE 
+	ABS(zscore) > 2.576 -- NONE
+ORDER BY 
+	location DESC;
+
+--- Outliers 2 STD and above/below mean
+SELECT 
+	location, 
+	total_cases, 
+	zscore
+FROM (
+    SELECT
+        location,
+        total_cases,
+        (CAST(total_cases AS float) - AVG(CAST(total_cases AS float)) OVER (PARTITION BY location)) / STDEV(CAST(total_cases AS float)) OVER (PARTITION BY location) AS zscore
+    FROM
+        CovidPortfolioProject..CovidDeaths
+    WHERE
+        continent IS NULL
+        AND location LIKE '%income%'
+) AS subquery
+WHERE 
+	ABS(zscore) > 1.96 -- NONE
+ORDER BY 
+	location DESC;
+	
+--- Outliers 1 STD and above/below mean
+SELECT 
+	location, 
+	total_cases, 
+	zscore
+FROM (
+    SELECT
+        location,
+        total_cases,
+        (CAST(total_cases AS float) - AVG(CAST(total_cases AS float)) OVER (PARTITION BY location)) / STDEV(CAST(total_cases AS float)) OVER (PARTITION BY location) AS zscore
+    FROM
+        CovidPortfolioProject..CovidDeaths
+    WHERE
+        continent IS NULL
+        AND location LIKE '%income%'
+) AS subquery
+WHERE 
+	ABS(zscore) > 1.65 -- 188 Outliers by 1 STD
+ORDER BY 
+	location DESC;
+
+
+
+--- Zscore new_cases
+SELECT
+    location,
+    date,
+    new_cases,
+    (CAST(new_cases AS float) - AVG(CAST(new_cases AS float)) OVER (PARTITION BY location)) / STDEV(CAST(new_cases AS float)) OVER (PARTITION BY location) AS zscore
+FROM
+    CovidPortfolioProject..CovidDeaths
+WHERE
+    continent IS NULL
+    AND location LIKE '%income%'
+ORDER BY
+    location, date DESC;
+
+--- Extreme outliers (Outliers 3 STD and above/below mean)
+SELECT 
+	location, 
+	new_cases, 
+	zscore
+FROM (
+    SELECT
+        location,
+        new_cases,
+        (CAST(new_cases AS float) - AVG(CAST(new_cases AS float)) OVER (PARTITION BY location)) / STDEV(CAST(new_cases AS float)) OVER (PARTITION BY location) AS zscore
+    FROM
+        CovidPortfolioProject..CovidDeaths
+    WHERE
+        continent IS NULL
+        AND location LIKE '%income%'
+) AS subquery
+WHERE 
+	ABS(zscore) > 2.576 -- 125 Extreme Outliers
+ORDER BY 
+	location DESC;
+
+--- Outliers 2 STD and above/below mean
+SELECT 
+	location, 
+	new_cases, 
+	zscore
+FROM (
+    SELECT
+        location,
+        new_cases,
+        (CAST(new_cases AS float) - AVG(CAST(new_cases AS float)) OVER (PARTITION BY location)) / STDEV(CAST(new_cases AS float)) OVER (PARTITION BY location) AS zscore
+    FROM
+        CovidPortfolioProject..CovidDeaths
+    WHERE
+        continent IS NULL
+        AND location LIKE '%income%'
+) AS subquery
+WHERE 
+	ABS(zscore) > 1.96 -- 191 Outliers by 2 STD
+ORDER BY 
+	location DESC;
+	
+--- Outliers 1 STD and above/below mean
+SELECT 
+	location, 
+	new_cases, 
+	zscore
+FROM (
+    SELECT
+        location,
+        new_cases,
+        (CAST(new_cases AS float) - AVG(CAST(new_cases AS float)) OVER (PARTITION BY location)) / STDEV(CAST(new_cases AS float)) OVER (PARTITION BY location) AS zscore
+    FROM
+        CovidPortfolioProject..CovidDeaths
+    WHERE
+        continent IS NULL
+        AND location LIKE '%income%'
+) AS subquery
+WHERE 
+	ABS(zscore) > 1.65 -- 228 Outliers by 1 STD
+ORDER BY 
+	location DESC;
+
+
+	--- Zscore new_deaths
+SELECT
+    location,
+    date,
+    new_deaths,
+    (CAST(new_deaths AS float) - AVG(CAST(new_deaths AS float)) OVER (PARTITION BY location)) / STDEV(CAST(new_deaths AS float)) OVER (PARTITION BY location) AS zscore
+FROM
+    CovidPortfolioProject..CovidDeaths
+WHERE
+    continent IS NULL
+    AND location LIKE '%income%'
+ORDER BY
+    location, date DESC;
+
+--- Extreme outliers
+SELECT 
+	location, 
+	new_deaths, 
+	zscore
+FROM (
+    SELECT
+        location,
+        new_deaths,
+        (CAST(new_deaths AS float) - AVG(CAST(new_deaths AS float)) OVER (PARTITION BY location)) / STDEV(CAST(new_deaths AS float)) OVER (PARTITION BY location) AS zscore
+    FROM
+        CovidPortfolioProject..CovidDeaths
+    WHERE
+        continent IS NULL
+        AND location LIKE '%income%'
+) AS subquery
+WHERE 
+	ABS(zscore) > 2.576 -- 126 Extreme Outliers
+ORDER BY 
+	location DESC;
+
+--- Outliers 2 STD and above/below mean
+SELECT 
+	location, 
+	new_deaths, 
+	zscore
+FROM (
+    SELECT
+        location,
+        new_deaths,
+        (CAST(new_deaths AS float) - AVG(CAST(new_deaths AS float)) OVER (PARTITION BY location)) / STDEV(CAST(new_deaths AS float)) OVER (PARTITION BY location) AS zscore
+    FROM
+        CovidPortfolioProject..CovidDeaths
+    WHERE
+        continent IS NULL
+        AND location LIKE '%income%'
+) AS subquery
+WHERE 
+	ABS(zscore) > 1.96 -- 211 Outliers by 2 STD
+ORDER BY 
+	location DESC;
+	
+--- Outliers 1 STD and above/below mean
+SELECT 
+	location, 
+	new_deaths, 
+	zscore
+FROM (
+    SELECT
+        location,
+        new_deaths,
+        (CAST(new_deaths AS float) - AVG(CAST(new_deaths AS float)) OVER (PARTITION BY location)) / STDEV(CAST(new_deaths AS float)) OVER (PARTITION BY location) AS zscore
+    FROM
+        CovidPortfolioProject..CovidDeaths
+    WHERE
+        continent IS NULL
+        AND location LIKE '%income%'
+) AS subquery
+WHERE 
+	ABS(zscore) > 1.65 -- 285 Outliers by 1 STD
+ORDER BY 
+	location DESC;
